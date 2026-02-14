@@ -1,12 +1,13 @@
 import telebot
 
-TOKEN = 8133621209:AAFlNcROEdUavnNVnc5dz5bgt7SGuCkalkQ
+TOKEN = "8133621209:AAFlNcROEdUavnNVnc5dz5bgt7SGuCkalkQ"
 
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    bot.reply_to(message, "سمعتك 😎 قلت: " + message.text)
+def reply_all(message):
+    bot.reply_to(message, "واش كاين 😎")
 
-print("البوت شغال 🔥")
+print("البوت راهو خدام 🔥")
+
 bot.infinity_polling()
