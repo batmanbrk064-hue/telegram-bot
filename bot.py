@@ -1,52 +1,27 @@
 import telebot
-import random
 
-TOKEN = "8133621209:AAFlNcROEdUavnNVnc5dz5bgt7SGuCkalkQ"
-
+TOKEN = "8578519383:AAEkdS0dG8RXdaufR-bd5asqG3vmDQ4bcFo"
 bot = telebot.TeleBot(TOKEN)
 
-# ترحيب بالأعضاء الجدد في القروب
-@bot.message_handler(content_types=['new_chat_members'])
-def welcome(message):
-    for user in message.new_chat_members:
-        bot.send_message(
-            message.chat.id,
-            f"مرحبا بيك {user.first_name} 😍 نورت القروب، معاك عبدو بوت 😎"
-        )
+# اسمك لي يحب يسمعو البوت
+MY_NAME = "عبدو"
 
-# الرد على الرسائل
+# كلمات السلام
+greetings = ["سلام", "اهلا", "مرحبا", "صباح الخير", "مساء الخير"]
+
 @bot.message_handler(func=lambda message: True)
 def reply(message):
     text = message.text.lower()
+    user_name = message.from_user.first_name
 
-    # رد السلام
-    if "سلام" in text or "السلام" in text:
-        responses = [
-            "وعليكم السلام ورحمة الله 🌸",
-            "مرحبا خويا 😎",
-            "ياهلا بيك 🤝"
-        ]
-        bot.reply_to(message, random.choice(responses))
+    # اذا قال سلام
+    if any(word in text for word in greetings):
+        bot.reply_to(message, f"وعليكم السلام {user_name} 😊 كيفاش نعاونك اليوم؟")
 
-    # رد كي يذكرو اسمك
-    elif "عبدو" in text:
-        responses = [
-            "واش كاين؟ عبدو هنا 😎",
-            "تنادي فيا؟ 👀",
-            "أنا معاك خويا 🤝",
-            "قول واش حاب 🔥"
-        ]
-        bot.reply_to(message, random.choice(responses))
+    # اذا نادى اسمك
+    elif MY_NAME.lower() in text:
+        bot.reply_to(message, f"نعم سمعتك 😎 واش تحب يا {user_name}؟")
 
-    # ردود عامة
+    # رد عادي كي انسان
     else:
-        responses = [
-            "فهمتك 👍",
-            "صح كلامك 😄",
-            "هههه مليحة 🤣",
-            "تمام 👌",
-            "واش تحب نعاونك؟"
-        ]
-        bot.reply_to(message, random.choice(responses))
-
-bot.infinity_polling()
+        bot.reply_to(message, "فهمتك 👍 احكيلي أكثر...")
