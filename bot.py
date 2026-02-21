@@ -4,7 +4,9 @@ import json, os, random
 from datetime import datetime
 
 TOKEN = "8392429863:AAG9dVG4s3PrDj1aQltjRiuhFenb-hc8ZM8"
-ADMIN_ID = 123456789  # حط الايدي تاعك هنا
+ADMIN_ID = 123456789  
+
+
 
 CHANNELS = ["@pizjzi", "@dksbsksk"]
 
