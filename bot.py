@@ -1,136 +1,173 @@
-# -------- NovaPoints V4 PRO Game Edition --------
-
-import sqlite3
-from datetime import datetime, timedelta
-from telegram import *
-from telegram.ext import *
+import telebot
+from telebot import types
+import json, os, random
+from datetime import datetime
 
 TOKEN = "8392429863:AAG9dVG4s3PrDj1aQltjRiuhFenb-hc8ZM8"
-ADMIN_ID = 7353077959
+ADMIN_ID = 123456789  # حط الايدي تاعك هنا
 
-conn = sqlite3.connect("nova_game.db", check_same_thread=False)
-cursor = conn.cursor()
+CHANNELS = ["@pizjzi", "@dksbsksk"]
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users(
-    user_id INTEGER PRIMARY KEY,
-    points INTEGER DEFAULT 0,
-    last_daily TEXT
-)
-""")
+bot = telebot.TeleBot(TOKEN)
+DATA_FILE = "data.json"
 
-conn.commit()
+# تحميل البيانات
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE,"r") as f:
+        users=json.load(f)
+else:
+    users={}
 
-# -------- الرتب --------
-def get_rank(points):
-    if points >= 20000:
-        return "👑 Legend"
-    elif points >= 10000:
-        return "💎 Diamond"
-    elif points >= 5000:
-        return "🥇 Gold"
-    elif points >= 2000:
-        return "🥈 Silver"
-    else:
-        return "🥉 Bronze"
+def save():
+    with open(DATA_FILE,"w") as f:
+        json.dump(users,f)
 
-# -------- القائمة الرئيسية --------
-def main_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💰 نقاطي", callback_data="points")],
-        [InlineKeyboardButton("🎯 المهام", callback_data="tasks")],
-        [InlineKeyboardButton("🛒 المتجر", callback_data="shop")],
-        [InlineKeyboardButton("💳 السحب الداخلي", callback_data="withdraw")],
-        [InlineKeyboardButton("🏆 المتصدرين", callback_data="top")],
-        [InlineKeyboardButton("🎁 مكافأة يومية", callback_data="daily")]
-    ])
+def level_calc(points):
+    return points // 5000
 
-def back():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]])
+def get_user(uid):
+    uid=str(uid)
+    if uid not in users:
+        users[uid]={
+            "points":500,
+            "vip":False,
+            "last_daily":"",
+            "streak":0,
+            "ref":None,
+            "games_played":0
+        }
+        save()
+    return users[uid]
 
-# -------- START --------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    cursor.execute("INSERT OR IGNORE INTO users(user_id, points) VALUES (?,0)", (user_id,))
-    conn.commit()
-    await update.message.reply_text("🔥 مرحبا بك في NovaPoints Game", reply_markup=main_menu())
+def check_sub(uid):
+    for ch in CHANNELS:
+        try:
+            member=bot.get_chat_member(ch,uid)
+            if member.status not in ["member","administrator","creator"]:
+                return False
+        except:
+            return False
+    return True
 
-# -------- الأزرار --------
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
+def force_sub(msg):
+    markup=types.InlineKeyboardMarkup()
+    for ch in CHANNELS:
+        markup.add(types.InlineKeyboardButton("📢 اشترك",url=f"https://t.me/{ch.replace('@','')}"))
+    markup.add(types.InlineKeyboardButton("🔄 تحقق",callback_data="check"))
+    bot.send_message(msg.chat.id,"🚫 اشترك في القنوات أولاً",reply_markup=markup)
 
-    if query.data == "points":
-        cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
-        pts = cursor.fetchone()[0]
-        await query.edit_message_text(f"💰 نقاطك: {pts}\n🎖 رتبتك: {get_rank(pts)}", reply_markup=back())
+def main_menu(msg):
+    kb=types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("💰 حسابي","🎁 يومي")
+    kb.add("🎰 سبين","🎮 ألعاب")
+    kb.add("👑 VIP","🛒 متجر")
+    kb.add("🏆 ترتيب","🔗 رابط الدعوة")
+    bot.send_message(msg.chat.id,"💎 NovaPoints V10",reply_markup=kb)
 
-    elif query.data == "daily":
-        cursor.execute("SELECT last_daily FROM users WHERE user_id=?", (user_id,))
-        data = cursor.fetchone()
-        now = datetime.now()
+@bot.message_handler(commands=['start'])
+def start(msg):
+    uid=msg.from_user.id
+    args=msg.text.split()
 
-        if data and data[0]:
-            last = datetime.fromisoformat(data[0])
-            if now - last < timedelta(hours=24):
-                await query.edit_message_text("⏳ ارجع بعد 24 ساعة", reply_markup=back())
-                return
-
-        cursor.execute("UPDATE users SET points=points+500, last_daily=? WHERE user_id=?", (now.isoformat(), user_id))
-        conn.commit()
-        await query.edit_message_text("🎉 ربحت 500 نقطة!", reply_markup=back())
-
-    elif query.data == "tasks":
-        cursor.execute("UPDATE users SET points=points+300 WHERE user_id=?", (user_id,))
-        conn.commit()
-        await query.edit_message_text("✅ أكملت مهمة اليوم وربحت 300 نقطة!", reply_markup=back())
-
-    elif query.data == "shop":
-        await query.edit_message_text(
-            "🛒 المتجر:\n\n"
-            "1️⃣ 1000 نقطة = 2000 نقطة (Boost)\n"
-            "2️⃣ ترقية رتبة بـ 5000 نقطة",
-            reply_markup=back()
-        )
-
-    elif query.data == "withdraw":
-        cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
-        pts = cursor.fetchone()[0]
-
-        if pts < 5000:
-            await query.edit_message_text("❌ الحد الأدنى للسحب 5000 نقطة", reply_markup=back())
-            return
-
-        cursor.execute("UPDATE users SET points=points-5000 WHERE user_id=?", (user_id,))
-        conn.commit()
-        await query.edit_message_text("✅ تم خصم 5000 نقطة بنجاح!", reply_markup=back())
-
-    elif query.data == "top":
-        cursor.execute("SELECT user_id, points FROM users ORDER BY points DESC LIMIT 10")
-        top = cursor.fetchall()
-        text = "🏆 المتصدرين:\n\n"
-        for i, u in enumerate(top, 1):
-            text += f"{i}- {u[0]} | {u[1]} نقطة\n"
-        await query.edit_message_text(text, reply_markup=back())
-
-    elif query.data == "back":
-        await query.edit_message_text("🔥 القائمة الرئيسية", reply_markup=main_menu())
-
-# -------- لوحة الإدارة --------
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not check_sub(uid):
+        force_sub(msg)
         return
-    cursor.execute("SELECT COUNT(*) FROM users")
-    count = cursor.fetchone()[0]
-    await update.message.reply_text(f"👥 عدد المستخدمين: {count}")
 
-# -------- تشغيل --------
-app = ApplicationBuilder().token(TOKEN).build()
+    user=get_user(uid)
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CallbackQueryHandler(buttons))
+    # نظام إحالة
+    if len(args)>1:
+        ref=args[1]
+        if ref!=str(uid) and user["ref"] is None:
+            user["ref"]=ref
+            if ref in users:
+                users[ref]["points"]+=1500
+            save()
 
-print("NovaPoints V4 PRO Running...")
-app.run_polling()
+    main_menu(msg)
+
+@bot.callback_query_handler(func=lambda c:c.data=="check")
+def check_call(call):
+    if check_sub(call.from_user.id):
+        main_menu(call.message)
+    else:
+        bot.answer_callback_query(call.id,"❌ مازلت ما اشتركتش")
+
+@bot.message_handler(func=lambda m:True)
+def handler(msg):
+    uid=msg.from_user.id
+    if not check_sub(uid):
+        force_sub(msg)
+        return
+
+    user=get_user(uid)
+
+    if msg.text=="💰 حسابي":
+        lvl=level_calc(user["points"])
+        vip="🔥 VIP" if user["vip"] else "عادي"
+        bot.send_message(msg.chat.id,
+        f"💎 نقاطك: {user['points']}\n📊 Level: {lvl}\n👑 الحالة: {vip}")
+
+    elif msg.text=="🎁 يومي":
+        today=datetime.now().strftime("%Y-%m-%d")
+        if user["last_daily"]==today:
+            bot.send_message(msg.chat.id,"⏳ رجع غدوة")
+        else:
+            reward=2000 if user["vip"] else 1000
+            user["points"]+=reward
+            user["last_daily"]=today
+            user["streak"]+=1
+            save()
+            bot.send_message(msg.chat.id,f"🔥 خذيت {reward} نقطة")
+
+    elif msg.text=="🎰 سبين":
+        reward=random.choice([0,500,1000,2000,5000])
+        user["points"]+=reward
+        save()
+        bot.send_message(msg.chat.id,f"🎰 ربحت {reward}")
+
+    elif msg.text=="🎮 ألعاب":
+        game=random.choice(["guess","rps","box"])
+        if game=="guess":
+            num=random.randint(1,5)
+            bot.send_message(msg.chat.id,f"🎯 خمنت الرقم {num} وربحت 1000")
+            user["points"]+=1000
+        elif game=="rps":
+            bot.send_message(msg.chat.id,"✂️ حجر ورقة مقص - ربحت 800")
+            user["points"]+=800
+        else:
+            reward=random.choice([0,1500,3000])
+            bot.send_message(msg.chat.id,f"📦 صندوق الحظ: {reward}")
+            user["points"]+=reward
+        user["games_played"]+=1
+        save()
+
+    elif msg.text=="👑 VIP":
+        if user["vip"]:
+            bot.send_message(msg.chat.id,"🔥 انت VIP")
+        elif user["points"]>=15000:
+            user["points"]-=15000
+            user["vip"]=True
+            save()
+            bot.send_message(msg.chat.id,"👑 تم تفعيل VIP")
+        else:
+            bot.send_message(msg.chat.id,"❌ تحتاج 15000 نقطة")
+
+    elif msg.text=="🔗 رابط الدعوة":
+        link=f"https://t.me/{bot.get_me().username}?start={uid}"
+        bot.send_message(msg.chat.id,f"🔗 رابطك:\n{link}")
+
+    elif msg.text=="🏆 ترتيب":
+        top=sorted(users.items(),key=lambda x:x[1]["points"],reverse=True)[:10]
+        text="🏆 Top 10:\n\n"
+        for i,(u,d) in enumerate(top,1):
+            text+=f"{i}- {d['points']} نقطة\n"
+        bot.send_message(msg.chat.id,text)
+
+    elif msg.text=="🛒 متجر":
+        bot.send_message(msg.chat.id,"🛒 قريبا مزايا إضافية")
+
+    elif uid==ADMIN_ID and msg.text=="/admin":
+        bot.send_message(msg.chat.id,f"👑 عدد المستخدمين: {len(users)}")
+
+bot.infinity_polling()
