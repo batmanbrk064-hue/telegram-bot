@@ -1,191 +1,156 @@
+import logging
 import sqlite3
-from telegram import *
-from telegram.ext import *
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 TOKEN = "8392429863:AAG9dVG4s3PrDj1aQltjRiuhFenb-hc8ZM8"
 CHANNEL_USERNAME = "@dksbsksk"
-ADMIN_ID = 123456789
-REF_POINTS = 700
 
-conn = sqlite3.connect("novapoints.db", check_same_thread=False)
+logging.basicConfig(level=logging.INFO)
+
+conn = sqlite3.connect("nova.db", check_same_thread=False)
 cursor = conn.cursor()
 
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, points INTEGER)")
-cursor.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, service TEXT, status TEXT)")
-cursor.execute("CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, value INTEGER)")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    points INTEGER DEFAULT 0,
+    invited_by INTEGER,
+    last_daily TEXT
+)
+""")
 conn.commit()
 
-async def check_sub(user_id, bot):
-    try:
-        member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status in ["member","administrator","creator"]
-    except:
-        return False
+# ----------- رتب -----------
+def get_rank(points):
+    if points >= 10000:
+        return "💎 Diamond"
+    elif points >= 5000:
+        return "🥇 Gold"
+    elif points >= 2000:
+        return "🥈 Silver"
+    else:
+        return "🥉 Bronze"
 
+# ----------- تحقق اشتراك -----------
+async def is_subscribed(user_id, context):
+    member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+    return member.status in ["member", "administrator", "creator"]
+
+# ----------- START -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
 
-    if not await check_sub(user_id, context.bot):
-        keyboard = [
-            [InlineKeyboardButton("🔔 اشترك", url="https://t.me/dksbsksk")],
-            [InlineKeyboardButton("✅ تحقق", callback_data="check")]
-        ]
-        await update.message.reply_text("⚠️ لازم تشترك باش يخدم NovaPoints",
-                                        reply_markup=InlineKeyboardMarkup(keyboard))
+    if not await is_subscribed(user_id, context):
+        keyboard = [[InlineKeyboardButton("📢 اشترك في القناة", url=f"https://t.me/{CHANNEL_USERNAME.replace('@','')}")]]
+        await update.message.reply_text(
+            "❌ لازم تشترك في القناة باش يخدم البوت",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return
+
+    ref = None
+    if context.args:
+        ref = int(context.args[0])
 
     cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
+        cursor.execute("INSERT INTO users (user_id, points, invited_by) VALUES (?, ?, ?)",
+                       (user_id, 0, ref))
         conn.commit()
-
-    cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
-    points = cursor.fetchone()[0]
-
-    text = f"""
-💎 NovaPoints 💎
-
-👤 ID: `{user_id}`
-💳 نقاطك: {points}
-
-🎁 كل دعوة = {REF_POINTS} نقطة
-"""
+        if ref and ref != user_id:
+            cursor.execute("UPDATE users SET points=points+700 WHERE user_id=?", (ref,))
+            conn.commit()
 
     keyboard = [
-        [InlineKeyboardButton("📦 الخدمات", callback_data="services")],
-        [InlineKeyboardButton("🎟 كود هدية", callback_data="gift")],
-        [InlineKeyboardButton("📊 حسابي", callback_data="account")],
-        [InlineKeyboardButton("💸 رابط الدعوة", callback_data="ref")]
+        [InlineKeyboardButton("💰 نقاطي", callback_data="points")],
+        [InlineKeyboardButton("🔗 رابط الدعوة", callback_data="ref")],
+        [InlineKeyboardButton("🎁 مكافأة يومية", callback_data="daily")],
+        [InlineKeyboardButton("🏆 المتصدرين", callback_data="top")]
     ]
 
-    await update.message.reply_text(text, parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        f"🔥 مرحبا بك في NovaPoints\nاختر من القائمة 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
+# ----------- أزرار -----------
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
     user_id = query.from_user.id
 
-    if query.data == "check":
-        if await check_sub(user_id, context.bot):
-            await query.answer("✅ تم التحقق", show_alert=True)
-        else:
-            await query.answer("❌ مازلت ما اشتركتش", show_alert=True)
-
-    elif query.data == "services":
-        keyboard = [
-            [InlineKeyboardButton("📈 زيادة تفاعل (1000)", callback_data="rush")],
-            [InlineKeyboardButton("🎮 شحن ألعاب (2000)", callback_data="games")],
-            [InlineKeyboardButton("📢 نشر ممول (1500)", callback_data="promo")],
-            [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
-        ]
-        await query.message.edit_text("💎 اختر الخدمة:",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif query.data == "gift":
-        await query.message.edit_text("✍️ اكتب:\n/code اسم_الكود")
-
-    elif query.data in ["rush","games","promo"]:
-        cost = 1000 if query.data=="rush" else 2000 if query.data=="games" else 1500
-
+    if query.data == "points":
         cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
         points = cursor.fetchone()[0]
-
-        if points >= cost:
-            cursor.execute("UPDATE users SET points=points-? WHERE user_id=?", (cost,user_id))
-            cursor.execute("INSERT INTO orders (user_id, service, status) VALUES (?,?,?)",
-                           (user_id, query.data, "قيد المراجعة"))
-            conn.commit()
-            await query.message.edit_text("⏳ تم إرسال طلبك للإدارة")
-        else:
-            await query.answer("❌ نقاط غير كافية", show_alert=True)
-
-    elif query.data == "account":
-        cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
-        points = cursor.fetchone()[0]
-        await query.message.edit_text(f"👤 حسابك\n💳 نقاطك: {points}")
+        rank = get_rank(points)
+        await query.edit_message_text(f"💰 نقاطك: {points}\n🎖 رتبتك: {rank}")
 
     elif query.data == "ref":
-        bot_username = (await context.bot.get_me()).username
-        link = f"https://t.me/{bot_username}?start={user_id}"
-        await query.message.reply_text(f"🔗 رابطك:\n{link}")
+        link = f"https://t.me/{context.bot.username}?start={user_id}"
+        await query.edit_message_text(f"🔗 رابط الدعوة:\n{link}\n\n🎁 كل صديق = 700 نقطة")
 
-    elif query.data == "back":
-        await start(update, context)
+    elif query.data == "daily":
+        cursor.execute("SELECT last_daily FROM users WHERE user_id=?", (user_id,))
+        data = cursor.fetchone()
+        now = datetime.now()
 
-# 🔥 تحويل نقاط
+        if data and data[0]:
+            last = datetime.fromisoformat(data[0])
+            if now - last < timedelta(hours=24):
+                await query.edit_message_text("⏳ تقدر تاخذ المكافأة بعد 24 ساعة")
+                return
+
+        cursor.execute("UPDATE users SET points=points+500, last_daily=? WHERE user_id=?",
+                       (now.isoformat(), user_id))
+        conn.commit()
+        await query.edit_message_text("🎉 ربحت 500 نقطة مكافأة يومية!")
+
+    elif query.data == "top":
+        cursor.execute("SELECT user_id, points FROM users ORDER BY points DESC LIMIT 10")
+        top = cursor.fetchall()
+        text = "🏆 أفضل 10 لاعبين:\n\n"
+        for i, user in enumerate(top, start=1):
+            text += f"{i}- ID {user[0]} | {user[1]} نقطة\n"
+        await query.edit_message_text(text)
+
+# ----------- تحويل نقاط -----------
 async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if len(context.args) != 2:
-        await update.message.reply_text("❌ الصيغة:\n/transfer ID عدد_النقاط")
+        await update.message.reply_text("الصيغة:\n/transfer ID المبلغ")
         return
 
-    try:
-        target_id = int(context.args[0])
-        amount = int(context.args[1])
-    except:
-        await update.message.reply_text("❌ تأكد من كتابة ID و العدد صحيح")
-        return
-
-    if amount <= 0:
-        await update.message.reply_text("❌ عدد نقاط غير صالح")
-        return
+    target = int(context.args[0])
+    amount = int(context.args[1])
 
     cursor.execute("SELECT points FROM users WHERE user_id=?", (user_id,))
-    sender = cursor.fetchone()
+    points = cursor.fetchone()[0]
 
-    if not sender or sender[0] < amount:
-        await update.message.reply_text("❌ نقاطك غير كافية")
+    if amount <= 0 or points < amount:
+        await update.message.reply_text("❌ نقاط غير كافية")
         return
 
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (target_id,))
+    cursor.execute("SELECT * FROM users WHERE user_id=?", (target,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES (?, 0)", (target_id,))
+        await update.message.reply_text("❌ هذا المستخدم غير موجود")
+        return
 
     cursor.execute("UPDATE users SET points=points-? WHERE user_id=?", (amount,user_id))
-    cursor.execute("UPDATE users SET points=points+? WHERE user_id=?", (amount,target_id))
+    cursor.execute("UPDATE users SET points=points+? WHERE user_id=?", (amount,target))
     conn.commit()
 
-    await update.message.reply_text(f"✅ تم تحويل {amount} نقطة بنجاح")
+    await update.message.reply_text("✅ تم التحويل بنجاح")
 
-async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not context.args:
-        await update.message.reply_text("❌ اكتب اسم الكود")
-        return
-
-    code = context.args[0]
-    cursor.execute("SELECT value FROM codes WHERE code=?", (code,))
-    data = cursor.fetchone()
-
-    if data:
-        value = data[0]
-        cursor.execute("UPDATE users SET points=points+? WHERE user_id=?", (value,user_id))
-        cursor.execute("DELETE FROM codes WHERE code=?", (code,))
-        conn.commit()
-        await update.message.reply_text(f"🎉 تم إضافة {value} نقطة بنجاح!")
-    else:
-        await update.message.reply_text("❌ كود غير صالح")
-
-async def create_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    try:
-        code = context.args[0]
-        value = int(context.args[1])
-        cursor.execute("INSERT INTO codes VALUES (?,?)", (code,value))
-        conn.commit()
-        await update.message.reply_text(f"✅ تم إنشاء الكود {code} بقيمة {value} نقطة")
-    except:
-        await update.message.reply_text("❌ الصيغة:\n/createcode CODE 1000")
-
+# ----------- تشغيل -----------
 app = ApplicationBuilder().token(TOKEN).build()
+
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("code", redeem))
-app.add_handler(CommandHandler("createcode", create_code))
 app.add_handler(CommandHandler("transfer", transfer))
 app.add_handler(CallbackQueryHandler(buttons))
 
-print("NovaPoints Running...")
+print("NovaPoints V2 is running...")
 app.run_polling()
