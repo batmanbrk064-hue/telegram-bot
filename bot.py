@@ -2,7 +2,7 @@ import os
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = os.getenv("8780687512:AAEznDGiwZDKdelnTV9LbRhKLR2KITML-zg")
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = -1003502571913
 
 keyboard = [
