@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("8780687512:AAEznDGiwZDKdelnTV9LbRhKLR2KITML-zg")
-CHANNEL_ID = -100XXXXXXXXXX   # حط هنا Channel ID تاعك
+CHANNEL_ID = -1003502571913
 
 keyboard = [
     ["🎮 Free Fire", "🎮 PUBG"],
