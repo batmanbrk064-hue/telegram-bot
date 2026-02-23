@@ -1,68 +1,49 @@
-import os
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import telebot
+from telebot import types
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = "8780687512:AAEznDGiwZDKdelnTV9LbRhKLR2KITML-zg"
 CHANNEL_ID = -1003502571913
 
-keyboard = [
-    ["🎮 Free Fire", "🎮 PUBG"],
-    ["📘 Facebook", "🎵 TikTok"],
-    ["📸 Instagram", "▶ YouTube"],
-    ["📢 Telegram", "🛒 أخرى"]
-]
+bot = telebot.TeleBot(TOKEN)
 
-reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+user_state = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🔥 مرحبا بك في Market DZ 🔥\n\nاختر نوع الحساب لي حاب تبيع:",
-        reply_markup=reply_markup
-    )
+@bot.message_handler(commands=['start'])
+def start(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("📢 نشر إعلان بيع")
+    markup.add("🔎 نشر طلب شراء")
+    bot.send_message(message.chat.id,
+                     "مرحبا بك في سوق NovaPoints 💎\nاختر الخدمة:",
+                     reply_markup=markup)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    user = update.message.from_user
+@bot.message_handler(func=lambda message: message.text in ["📢 نشر إعلان بيع", "🔎 نشر طلب شراء"])
+def ask_details(message):
+    user_state[message.chat.id] = message.text
+    bot.send_message(message.chat.id,
+                     "✍️ اكتب تفاصيل الإعلان الآن:\n\nمثال:\nنوع الحساب:\nالمستوى:\nالسعر:")
 
-    categories = [
-        "🎮 Free Fire", "🎮 PUBG",
-        "📘 Facebook", "🎵 TikTok",
-        "📸 Instagram", "▶ YouTube",
-        "📢 Telegram", "🛒 أخرى"
-    ]
+@bot.message_handler(func=lambda message: message.chat.id in user_state)
+def publish_ad(message):
+    ad_type = user_state[message.chat.id]
+    user = message.from_user
 
-    if text in categories:
-        context.user_data["category"] = text
-        await update.message.reply_text("ابعث تفاصيل الحساب (مستوى / متابعين / السعر) 💰")
-
-    else:
-        if "category" in context.user_data:
-            category = context.user_data["category"]
-
-            message = f"""
+    text = f"""
 🔥 إعلان جديد 🔥
 
-📌 النوع: {category}
+📌 النوع: {ad_type}
+👤 الناشر: @{user.username if user.username else "لا يوجد يوزر"}
+🆔 ID: {user.id}
 
 📝 التفاصيل:
-{text}
+{message.text}
 
-👤 البائع: @{user.username}
+⚠️ الإدارة غير مسؤولة عن أي تعامل خارج البوت.
 """
 
-            await context.bot.send_message(chat_id=CHANNEL_ID, text=message)
+    bot.send_message(CHANNEL_ID, text)
+    bot.send_message(message.chat.id, "✅ تم نشر إعلانك بنجاح في القناة!")
+    del user_state[message.chat.id]
 
-            await update.message.reply_text("✅ تم نشر إعلانك في القناة!")
-
-            context.user_data.clear()
-        else:
-            await update.message.reply_text("اضغط /start باش تبدا")
-
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot Running...")
-    app.run_polling()
+print("Bot is running...")
+bot.infinity_polling()
