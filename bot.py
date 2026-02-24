@@ -1,8 +1,8 @@
 import telebot
 from telebot import types
 
-TOKEN = "8780687512:AAEznDGiwZDKdelnTV9LbRhKLR2KITML-zg"  # حط التوكن تاعك
-CHANNEL_ID = -1003502571913    # ID القناة
+TOKEN = "8780687512:AAEznDGiwZDKdelnTV9LbRhKLR2KITML-zg"
+CHANNEL_ID = -1003502571913
 
 bot = telebot.TeleBot(TOKEN)
 user_state = {}
@@ -18,64 +18,73 @@ def start(message):
 
 @bot.message_handler(func=lambda message: message.text in ["📢 نشر إعلان بيع", "🔎 نشر طلب شراء"])
 def ask_details(message):
-    user_state[message.chat.id] = message.text
+    user_state[message.chat.id] = {
+        "type": message.text,
+        "photos": []
+    }
     bot.send_message(message.chat.id,
-                     "✍️ اكتب تفاصيل الإعلان الآن:\nمثال:\nنوع الحساب:\nالسعر:")
+                     "✍️ اكتب تفاصيل الإعلان:")
 
-@bot.message_handler(func=lambda message: message.chat.id in user_state)
+# استقبال الصور
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    if message.chat.id in user_state:
+        file_id = message.photo[-1].file_id
+        user_state[message.chat.id]["photos"].append(file_id)
+        bot.send_message(message.chat.id,
+                         "📸 تم حفظ الصورة.\nارسل صور أخرى أو اكتب /done للنشر.")
+
+# عند الانتهاء
+@bot.message_handler(commands=['done'])
 def publish_ad(message):
-    ad_type = user_state[message.chat.id]
+    if message.chat.id not in user_state:
+        return
+
+    data = user_state[message.chat.id]
     user = message.from_user
 
-    # تحديد الاسم المعروض
     if user.username:
         display_name = f"@{user.username}"
     else:
-        display_name = f"{user.first_name} {user.last_name if user.last_name else ''}".strip()
+        display_name = user.first_name
 
     text = f"""
 🔥 إعلان جديد 🔥
 
-📌 النوع: {ad_type}
+📌 النوع: {data['type']}
 👤 الناشر: {display_name}
 🆔 ID: {user.id}
-
-📝 التفاصيل:
-{message.text}
 
 ⚠️ الإدارة غير مسؤولة عن أي تعامل خارج البوت.
 """
 
-    # إنشاء أزرار Inline
-    inline_buttons = types.InlineKeyboardMarkup(row_width=2)
-    
-    # زر التواصل مع البائع
-    inline_buttons.add(types.InlineKeyboardButton(
-        text="💬 تواصل مع البائع",
+    # زر تواصل فقط
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        "💬 تواصل مع البائع",
         url=f"tg://user?id={user.id}"
     ))
 
-    # أزرار لكل نوع حساب/خدمة
-    inline_buttons.add(
-        types.InlineKeyboardButton("🎮 Free Fire", callback_data="freefire"),
-        types.InlineKeyboardButton("🔫 PUBG", callback_data="pubg"),
-        types.InlineKeyboardButton("⚽ FIFA", callback_data="fifa"),
-        types.InlineKeyboardButton("📘 Facebook", callback_data="facebook"),
-        types.InlineKeyboardButton("📸 Instagram", callback_data="instagram"),
-        types.InlineKeyboardButton("🎵 TikTok", callback_data="tiktok"),
-        types.InlineKeyboardButton("▶️ YouTube", callback_data="youtube")
-    )
+    # إذا عندو صور
+    if data["photos"]:
+        media = []
+        for photo in data["photos"]:
+            media.append(types.InputMediaPhoto(photo))
+        media[0].caption = text
+        bot.send_media_group(CHANNEL_ID, media)
+        bot.send_message(CHANNEL_ID, "اضغط للتواصل 👇", reply_markup=markup)
+    else:
+        bot.send_message(CHANNEL_ID, text, reply_markup=markup)
 
-    # إرسال الإعلان مع الأزرار للقناة
-    bot.send_message(CHANNEL_ID, text, reply_markup=inline_buttons)
-    bot.send_message(message.chat.id, "✅ تم نشر إعلانك بنجاح في القناة!")
+    bot.send_message(message.chat.id, "✅ تم نشر إعلانك بنجاح!")
     del user_state[message.chat.id]
 
-# التعامل مع الضغط على أزرار النوع
-@bot.callback_query_handler(func=lambda call: True)
-def callback_inline(call):
-    # نقدر هنا نحط ردود بسيطة أو نرسل رسالة
-    bot.answer_callback_query(call.id, f"🔹 لقد ضغطت على {call.data}")
+# استقبال تفاصيل نصية
+@bot.message_handler(func=lambda message: message.chat.id in user_state)
+def save_text(message):
+    user_state[message.chat.id]["details"] = message.text
+    bot.send_message(message.chat.id,
+                     "📸 إذا عندك صور ارسلهم الآن.\nللنشر بدون صور اكتب /done")
 
 print("Bot is running...")
 bot.infinity_polling()
